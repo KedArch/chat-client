@@ -16,8 +16,7 @@ class Client():
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.languagefile = os.path.join(self.basedir, "languages.ini")
-        self.languagetempfile = os.path.join(self.basedir, "languages\
-                                             .template.ini")
+        self.languagetempfile = os.path.join(self.basedir, "languages.template.ini")
         self.configfile = os.path.join(self.basedir, "config.ini")
         self.configtempfile = os.path.join(self.basedir, "config.template.ini")
         self.bufsiz = 4096
@@ -32,7 +31,6 @@ class Client():
             "help_h": "display this help list",
             "help_q": "quits program",
             "help_tl": "explains app technical limitations.",
-            "i_opt": "Invalid option: ",
             "tk_init_err": "Can't initialize Tk interface.",
             "tkinter_err": "Can't import tkinter module.",
             "tk_err": ("An error occured when initializing Tk "
@@ -48,12 +46,11 @@ class Client():
             "i_port": "Port must be in 0-65535 range.",
             "n_conn": "Not connected to any host.",
             "t_limit": ("Due to technical limitations after receiving "
-                        "the message at the time of writing the value "
-                        "before '|' is in the buffer and also will be "
-                        "sent after pressing Enter. To prevent this "
-                        "please press delete key as many times as "
-                        "this character has."),
-            "u_comm": "Unknown command: ",
+                        "the message at the time of writing own anything "
+                        "typed before is in buffer, but will not be displayed"
+                        " on the new line. When a solution is found it will"
+                        " be fixed."),
+            "u_comm": "Unknown command:",
             "conn_lost": "Connection to server lost.",
         }
         self.defaults = (
@@ -110,8 +107,7 @@ class Client():
                 wheight = 200
             xcord = int(swidth / 2 - wwidth / 2)
             ycord = int(sheight / 2 - wheight / 2)
-            self.tk.geometry("{}x{}+{}+{}".format(wwidth, wheight,
-                             xcord, ycord))
+            self.tk.geometry(f"{wwidth}x{wheight}+{xcord}+{ycord}")
             self.frame = tkinter.Frame(self.tk)
             self.out = tkinter.Text(self.frame, height=0, width=0)
             self.scroll = tkinter.Scrollbar(self.frame)
@@ -334,7 +330,7 @@ class Client():
             self.out.config(state="disabled")
             self.out.see("end")
         if self.gui == 0:
-            print("|" + msg)
+            print(msg)
 
     def receive(self):
         while 1:
@@ -430,7 +426,7 @@ class Client():
                     except (NameError, OSError, AttributeError):
                         pass
                     if self.gui == 0:
-                        self.print_method(self.lang_check("help_tl"))
+                        self.print_method(":tl - " + self.lang_check("help_tl"))
                 elif msg == ":q":
                     self.exit_program(0)
                 elif self.gui == 0 and msg == ":tl":
@@ -440,8 +436,8 @@ class Client():
                         self.send(msg)
                     except (NameError, OSError, AttributeError):
                         if msg.startswith(":"):
-                            self.print_method(f"{self.lang_check('u_comm')}"
-                                              f"{msg}")
+                            self.print_method(f"{self.lang_check('u_comm')} "
+                                              f"'{msg}'")
                         else:
                             self.print_method(self.lang_check("n_conn"))
                 if self.gui == 1:
