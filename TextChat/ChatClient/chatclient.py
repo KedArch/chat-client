@@ -201,7 +201,7 @@ class Client():
         finally:
             sys.exit(3)
 
-    def config_template(self):
+    def config_template(self, template=""):
         config = configparser.ConfigParser()
         config.add_section("main")
         config.add_section("tk")
@@ -214,13 +214,13 @@ class Client():
             self.verbose("Done. Rename it to "
                          f"{os.path.basename(self.configfile)}"
                          "to make it work.")
-            if not self.args.template:
+            if not template:
                 sys.exit(0)
             err = 0
         except PermissionError:
             print("Can't write in folder. Check permissions. Config "
                   "template file not generated.")
-            if not self.args.template:
+            if not template:
                 sys.exit(3)
             else:
                 err = 1
@@ -250,31 +250,31 @@ class Client():
         return var
 
     def verbose(self, text):
-        if self.args.verbose:
+        if self.vb:
             print(text)
 
-    def start(self, args):
+    def start(self, interface="", lang="", verbose="", config="", template=""):
         self.config = configparser.ConfigParser()
         self.config.read(self.configfile)
-        self.args = args
-        if self.args.config:
-            err = self.config_template()
+        self.vb=verbose
+        if config:
+            err = self.config_template(template)
         else:
             err = 0
-        if self.args.template:
+        if config:
             self.lang_template(err)
         for i in self.defaults:
             var = self.check_setting(*i)
             self.settings[i[0]][i[1]] = var
-        if self.args.lang:
-            self.verbose(f"Language overriden with {self.args.lang}.")
-            self.lang = self.init_lang(self.args.lang)
+        if lang:
+            self.verbose(f"Language overriden with {lang}.")
+            self.lang = self.init_lang(lang)
         else:
             self.lang = self.init_lang(self.settings["main"]["language"])
-        if self.args.interface == "cli":
+        if interface == "cli":
             self.gui = 0
             self.verbose("Interface overriden with CLI.")
-        elif self.args.interface == "tk":
+        elif interface == "tk":
             self.gui = 1
             self.verbose("Interface overriden with Tk.")
         else:
@@ -282,7 +282,7 @@ class Client():
                 self.gui = 0
             elif self.settings["main"]["interface"] == "tk":
                 self.gui = 1
-            elif not self.args.interface:
+            elif not interface:
                 self.gui = 1
         if self.gui == 1:
             t = 0
@@ -471,4 +471,5 @@ if __name__ == "__main__":
     arg.add_argument("-t", "--template", action="store_true",
                      help="Generate language template.")
     args = arg.parse_args()
-    Client().start(args)
+    Client().start(args.interface, args.lang, args.verbose,
+                   args.config, args.template)
