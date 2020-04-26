@@ -16,7 +16,8 @@ class Client():
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.languagefile = os.path.join(self.basedir, "languages.ini")
-        self.languagetempfile = os.path.join(self.basedir, "languages.template.ini")
+        self.languagetempfile = os.path.join(self.basedir,
+                                             "languages.template.ini")
         self.configfile = os.path.join(self.basedir, "config.ini")
         self.configtempfile = os.path.join(self.basedir, "config.template.ini")
         self.bufsiz = 4096
@@ -256,7 +257,7 @@ class Client():
     def start(self, interface="", lang="", verbose="", config="", template=""):
         self.config = configparser.ConfigParser()
         self.config.read(self.configfile)
-        self.vb=verbose
+        self.vb = verbose
         if config:
             err = self.config_template(template)
         else:
@@ -426,7 +427,8 @@ class Client():
                     except (NameError, OSError, AttributeError):
                         pass
                     if self.gui == 0:
-                        self.print_method(":tl - " + self.lang_check("help_tl"))
+                        self.print_method(":tl - "
+                                          + self.lang_check("help_tl"))
                 elif msg == ":q":
                     self.exit_program(0)
                 elif self.gui == 0 and msg == ":tl":
