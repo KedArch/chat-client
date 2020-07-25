@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 
-import argparse
-import socket
-import threading
-import sys
 import os
+import sys
+import ssl
+import socket
 import select
+import argparse
+import threading
 import configparser
-
-if os.name != "nt":
-    import readline
+import prompt_toolkit as pt
 
 
 class Client():
@@ -20,37 +19,30 @@ class Client():
                                              "languages.template.ini")
         self.configfile = os.path.join(self.basedir, "config.ini")
         self.configtempfile = os.path.join(self.basedir, "config.template.ini")
-        self.bufsiz = 4096
-        self.code = "utf8"
         self.client = ""
         self.english = {
             "welcome": "Welcome! Type :h for help.",
-            "help": ("List of available commands from the client "
-                     "(Executed before server commands):"),
+            "help": "List of available commands from the client "
+                    "(Executed before server commands):",
             "help_c": "connects to server",
             "help_dc": "disconnects from the server",
             "help_h": "display this help list",
             "help_q": "quits program",
             "help_tl": "explains app technical limitations.",
-            "tk_init_err": "Can't initialize Tk interface.",
-            "tkinter_err": "Can't import tkinter module.",
-            "tk_err": ("An error occured when initializing Tk "
-                       "interface, falling back to CLI."),
             "tk_title": "Text chat",
             "dconn": "Disconnected from",
             "conn": "Connected to",
-            "tm_args": "Too much arguments.",
-            "ne_args": "Not enough arguments",
+            "i_args": "Invalid arguments.",
             "refused": "Host refused connection.",
             "u_host": "Unknown host.",
             "nct_host": "No connection to host.",
             "i_port": "Port must be in 0-65535 range.",
             "n_conn": "Not connected to any host.",
-            "t_limit": ("Due to technical limitations after receiving "
-                        "the message at the time of writing own anything "
-                        "typed before is in buffer, but will not be displayed"
-                        " on the new line. When a solution is found it will"
-                        " be fixed."),
+            "t_limit": "Due to technical limitations after receiving "
+                       "the message at the time of writing own anything "
+                       "typed before is in buffer, but will not be displayed"
+                       " on the new line. When a solution is found it will"
+                       " be fixed.",
             "u_comm": "Unknown command:",
             "conn_lost": "Connection to server lost.",
         }
@@ -166,17 +158,20 @@ class Client():
                     except configparser.NoOptionError:
                         languages.set(language, key, self.english[key])
                         sellang[key] = self.english[key]
-                        self.verbose(f"No key '{key}' in {lang}"
-                                     " in language file. Adding it "
-                                     "with English text.")
+                        self.verbose(
+                                f"No key '{key}' in {lang}"
+                                " in language file. Adding it "
+                                "with English text.")
                 return sellang
             except configparser.NoSectionError:
-                self.verbose(f"It seems that {lang} is in main section, "
-                             "but associated section doesn't exist. "
-                             "Ignoring it and using builtin English.")
+                self.verbose(
+                        f"It seems that {lang} is in main section, "
+                        "but associated section doesn't exist. "
+                        "Ignoring it and using builtin English.")
             except (configparser.NoSectionError, configparser.NoOptionError):
-                self.verbose(f"Can't find language {lang} in file. Using "
-                             "builtin English.")
+                self.verbose(
+                        f"Can't find language {lang} in file. Using "
+                        "builtin English.")
             return self.english
 
     def lang_template(self, err):
@@ -191,9 +186,10 @@ class Client():
             with open(self.languagetempfile, "w",
                       encoding="utf-8") as langfile:
                 languages.write(langfile)
-            self.verbose("Done. Rename it to "
-                         f"{os.path.basename(self.languagefile)}"
-                         " to make it work.")
+            self.verbose(
+                    "Done. Rename it to "
+                    f"{os.path.basename(self.languagefile)}"
+                    " to make it work.")
             if not err:
                 sys.exit(0)
         except PermissionError:
@@ -212,9 +208,10 @@ class Client():
             self.verbose("Creating config template.")
             with open(self.configtempfile, "w", encoding="utf-8") as conffile:
                 config.write(conffile)
-            self.verbose("Done. Rename it to "
-                         f"{os.path.basename(self.configfile)}"
-                         "to make it work.")
+            self.verbose(
+                    "Done. Rename it to "
+                    f"{os.path.basename(self.configfile)}"
+                    "to make it work.")
             if not template:
                 sys.exit(0)
             err = 0
@@ -254,7 +251,9 @@ class Client():
         if self.vb:
             print(text)
 
-    def start(self, interface="", lang="", verbose="", config="", template=""):
+    def start(self, interface="", lang="", verbose="", config="", template="",
+              secure=""):
+        self.secure = secure
         self.config = configparser.ConfigParser()
         self.config.read(self.configfile)
         self.vb = verbose
@@ -297,10 +296,10 @@ class Client():
                 self.start_tk()
             except ImportError:
                 if t:
-                    print(self.lang_check("tk_init_err"))
+                    print("Couldn't initialize TK interface")
                 else:
-                    print(self.lang_check("tkinter_err"))
-                print(self.lang_check("tk_err"))
+                    print("Couldn't import tkinter module")
+                print("Falling back to CLI")
                 self.gui = 0
         if self.gui == 0 and sys.stdin.isatty() is True:
             self.verbose("Initializing CLI interface.")
@@ -321,7 +320,8 @@ class Client():
             self.tkhistory.append("")
             self.tkhistpos = len(self.tkhistory) - 1
         if self.gui == 0:
-            msg = input()
+            words = pt.completion.WordCompleter([":c", ":dc", ":h", ":q"])
+            msg = pt.prompt(completer=words, complete_while_typing=True)
         return msg
 
     def print_method(self, msg):
@@ -334,12 +334,12 @@ class Client():
             print(msg)
 
     def receive(self):
-        while 1:
+        while True:
             try:
                 r, _, _ = select.select([self.client], [self.client],
                                         [self.client])
                 if r:
-                    data = self.client.recv(self.bufsiz).decode(self.code)
+                    data = self.client.recv(4096).decode("utf8")
                     if data == "":
                         self.client.close()
                         break
@@ -348,7 +348,7 @@ class Client():
                 break
 
     def send(self, data):
-        self.client.sendall(bytes(data, self.code))
+        self.client.sendall(bytes(data, "utf8"))
 
     def exit_on_bind(self, event=""):
         self.exit_program(0)
@@ -368,10 +368,13 @@ class Client():
         self.print_method(f"{self.lang_check('dconn')}"
                           f" {self.host}"
                           f":{self.port}")
-        self.receive_thread.join()
+        try:
+            self.receive_thread.join()
+        except AttributeError:
+            pass
 
     def on_enter(self, event=""):
-        while 1:
+        while True:
             try:
                 msg = self.input_method()
                 if msg == "":
@@ -382,13 +385,20 @@ class Client():
                 elif msg.split(" ", 3)[0] == ":c":
                     try:
                         if len(msg.split(" ", 3)) > 3:
-                            self.print_method(self.lang_check("tm_args"))
+                            self.print_method(self.lang_check("i_args"))
                         if self.client:
                             self.disconnect()
                         self.host = msg.split(" ", 3)[1]
                         self.port = int(msg.split(" ", 3)[2])
                         addr = (self.host, self.port)
-                        self.client = socket.create_connection(addr)
+                        self.client = socket.socket(
+                                socket.AF_INET,
+                                socket.SOCK_STREAM)
+                        if self.secure:
+                            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                            context.load_verify_locations(self.secure)
+                            self.client = ssl.wrap_socket(self.client)
+                        self.client.connect(addr)
                         self.receive_thread = threading.Thread(
                             name="Receive",
                             target=self.receive
@@ -401,7 +411,7 @@ class Client():
                     except (KeyboardInterrupt, EOFError):
                         self.exit_program(0)
                     except IndexError:
-                        self.print_method(self.lang_check("tm_args"))
+                        self.print_method(self.lang_check("i_args"))
                     except ConnectionRefusedError:
                         self.print_method(self.lang_check("refused"))
                     except socket.gaierror:
@@ -454,24 +464,27 @@ class Client():
 
 
 if __name__ == "__main__":
-    arg = argparse.ArgumentParser(description="Simple chat client.",
-                                  epilog="Command line arguments "
-                                  "override config arguments, "
-                                  "otherwise defaults will be used. "
-                                  "In an event, where Tk interface "
-                                  "cannot be initialized, a CLI interface"
-                                  " will be started, otherwise exit code 1"
-                                  " will be returned. If given invalid "
-                                  "argument, exit code 2 will be returned.")
-    arg.add_argument("-i", "--interface",
-                     help="Select interface: CLI or Tk (default)")
-    arg.add_argument("-l", "--lang", help="Set language (default builtin)")
-    arg.add_argument("-v", "--verbose", action="store_true",
-                     help="Show debug info (in English only).")
-    arg.add_argument("-c", "--config", action="store_true",
-                     help="Generate config template.")
-    arg.add_argument("-t", "--template", action="store_true",
-                     help="Generate language template.")
+    arg = argparse.ArgumentParser(
+            description="Simple chat client intended for personal use")
+    arg.add_argument(
+        "-i", "--interface",
+        help="Select interface: CLI or Tk (default)")
+    arg.add_argument(
+        "-l", "--lang",
+        help="Set language (default builtin)")
+    arg.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Show debug info (in English only).")
+    arg.add_argument(
+        "-c", "--config", action="store_true",
+        help="Generate config template.")
+    arg.add_argument(
+        "-t", "--template", action="store_true",
+        help="Generate language template.")
+    arg.add_argument(
+        "-s", "--secure", help="Enables SSL/TLS. Argument is"
+        " cerftile for authorizaton")
     args = arg.parse_args()
-    Client().start(args.interface, args.lang, args.verbose,
-                   args.config, args.template)
+    Client().start(
+        args.interface, args.lang, args.verbose,
+        args.config, args.template, args.secure)
