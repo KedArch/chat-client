@@ -96,7 +96,7 @@ class Client():
         except AttributeError:
             pass
 
-    def start(self):
+    def start(self, secure=False):
         if not sys.stdin.isatty():
             sys.exit(66)
         self.print_method(self.welcome)
@@ -117,9 +117,9 @@ class Client():
                         self.client = socket.socket(
                                 socket.AF_INET,
                                 socket.SOCK_STREAM)
-                        if self.secure:
+                        if secure:
                             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                            context.load_verify_locations(self.secure)
+                            context.load_verify_locations(secure)
                             self.client = ssl.wrap_socket(self.client)
                         self.client.connect(self.addr)
                         self.receive_thread = threading.Thread(
@@ -166,25 +166,27 @@ class Client():
                             self.print_method(f"Unknown command: '{msg}'")
                         else:
                             self.print_method("Not connected to any host")
-            except (KeyboardInterrupt, EOFError):
+            except EOFError:
                 self.exit_program(0)
+            except KeyboardInterrupt:
+                continue
             except BrokenPipeError:
                 self.client.close()
                 self.print_method("Connection to server lost")
 
-    def parse_args(self):
-        arg = argparse.ArgumentParser(
-                formatter_class=argparse.RawDescriptionHelpFormatter,
-                description="Simple chat client intended for personal use",
-                epilog="Error codes an their element:"
-                       "\n65 - prompt_toolkit import"
-                       "\n66 - not a pts/tty")
-        arg.add_argument(
-            "-s", "--secure",
-            help="Enables SSL/TLS. Argument is cerftile for auth.")
-        self.secure = arg.parse_args().secure
-        self.start()
+
+def parse_args():
+    arg = argparse.ArgumentParser(
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            description="Simple chat client intended for personal use",
+            epilog="Error codes an their element:"
+                   "\n65 - prompt_toolkit import"
+                   "\n66 - not a pts/tty")
+    arg.add_argument(
+        "-s", "--secure",
+        help="Enables SSL/TLS. Argument is certfile for auth.")
+    Client().start(arg.parse_args().secure)
 
 
 if __name__ == "__main__":
-    Client().parse_args()
+    parse_args()
