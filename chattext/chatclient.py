@@ -67,10 +67,12 @@ class Client():
                     data = self.client.recv(4096).decode("utf8")
                     if data == "":
                         self.client.close()
+                        self.disconnect()
                         self.addr = (None, " not connected to any")
                         break
                     self.print_method(data)
             except (OSError, ValueError, ConnectionResetError):
+                self.disconnect()
                 self.addr = (None, " not connected to any")
                 break
 
@@ -86,14 +88,16 @@ class Client():
         sys.exit(status)
 
     def disconnect(self):
-        self.addr = (None, " not connected to any")
-        self.client.close()
-        self.print_method("Disconnected from"
-                          f" {self.host}"
-                          f":{self.port}")
+        if self.client:
+            self.addr = (None, " not connected to any")
+            self.client.close()
+            self.print_method("Disconnected from"
+                              f" {self.host}"
+                              f":{self.port}")
+            self.client = ""
         try:
             self.receive_thread.join()
-        except AttributeError:
+        except (AttributeError, RuntimeError):
             pass
 
     def start(self, secure=False):
