@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Todo:
+# -edit select (now is like loop wasting CPU time)
 # -update completion
 # -timeout
 # -protocol
@@ -84,7 +85,8 @@ class Client():
     def receive(self):
         while True:
             try:
-                r = select.select([self.client], [], [])
+                r, _, _ = select.select([self.client], [self.client],
+                                        [self.client])
                 if r:
                     data = self.client.recv(4096).decode("utf8")
                     if data == "":
@@ -190,8 +192,8 @@ class Client():
                         self.print_method("Not connected to any host")
                 elif msg[0] == ":h":
                     self.print_method("Client commands:")
-                    for v, k in self.help.items():
-                        self.print_method(f"{v} - {self.help[k]}")
+                    for k, v in self.help.items():
+                        self.print_method(f"{k} - {v}")
                     try:
                         self.send(shlex.join(msg))
                     except (NameError, OSError, AttributeError):
@@ -202,7 +204,7 @@ class Client():
                     try:
                         self.send(shlex.join(msg))
                     except (NameError, OSError, AttributeError):
-                        if msg.startswith(":"):
+                        if msg[0].startswith(":"):
                             self.print_method(f"Unknown command: '{msg}'")
                         else:
                             self.print_method("Not connected to any host")
