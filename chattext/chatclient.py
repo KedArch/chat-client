@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # Todo:
-# -edit select (now is like loop wasting CPU time)
 # -update completion
 # -timeout
 # -protocol
@@ -85,8 +84,7 @@ class Client():
     def receive(self):
         while True:
             try:
-                r, _, _ = select.select([self.client], [self.client],
-                                        [self.client])
+                r, _, _ = select.select([self.client], [], [], 1)
                 if r:
                     data = self.client.recv(4096).decode("utf8")
                     if data == "":
