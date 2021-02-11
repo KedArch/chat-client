@@ -2,13 +2,13 @@
 # Todo:
 # -update completion
 # -timeout
-# -protocol
 # -config
 # -colors
 # -commands
 import os
 import sys
 import ssl
+import json
 import shlex
 import select
 import signal
@@ -16,7 +16,6 @@ import socket
 import asyncio
 import argparse
 import threading
-from collections.abc import Mapping
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -31,6 +30,7 @@ except ImportError:
 class Client():
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
+        self.buffer = 4096
         self.ps = PromptSession()
         self.client = None
         self.addr = (None, " not connected to any")
@@ -52,16 +52,6 @@ class Client():
 
     def bottom_text(self):
         return f"Server> {self.addr[0]}:{self.addr[1]}"
-
-    def merge_dicts(self, d, u):
-        for k, v in u.items():
-            if isinstance(v, Mapping):
-                d[k] = self.merge_dicts(d.get(k, {}), v)
-            elif isinstance(d, dict):
-                d[k] = u[k]
-            else:
-                d = {k: u[k]}
-        return d
 
     def update_completion(self, msg):
         for i in msg[1:]:
@@ -86,17 +76,37 @@ class Client():
             try:
                 r, _, _ = select.select([self.client], [], [], 1)
                 if r:
-                    data = self.client.recv(4096).decode("utf8")
+                    data = self.client.recv(self.buffer).decode("utf8")
                     if data == "":
                         self.disconnect_recv(False)
                         break
-                    self.print_method(data)
-            except (OSError, ValueError, ConnectionResetError):
+                    data = json.loads(data)
+                    if data["type"] == "message":
+                        self.print_method(data["content"])
+                    elif data["type"] == "privmsg":
+                        pass
+                    elif data["type"] == "control":
+                        pass
+            except (OSError, ValueError, ConnectionResetError,
+                    json.JSONDecodeError, TypeError):
                 self.disconnect_recv(True)
                 break
 
-    def send(self, data):
-        self.client.sendall(bytes(data, "utf8"))
+    def send(self, content, mtype="message", attrib=None):
+        tmp = {
+            "type": mtype,
+            "attrib": attrib,
+            "content": content.strip()
+        }
+        data = json.dumps(tmp)
+        if not len(data) > 8*self.buffer//10:
+            data = data.ljust(self.buffer)
+            self.client.sendall(bytes(data, "utf8"))
+        else:
+            self.print_method(
+                "Your message is too large! It can be at most "
+                f"{8*self.buffer//10} (80% server's buffer "
+                f"{self.buffer} is safe limit).")
 
     def exit(self, status, frame=None):
         self.disconnect_main()
@@ -106,15 +116,14 @@ class Client():
         if self.client:
             try:
                 self.client.close()
+                self.addr = (None, " not connected to any")
                 self.receive_thread.join()
             except (BrokenPipeError, AttributeError):
                 pass
 
     def disconnect_recv(self, error):
         if self.client:
-            self.addr = (None, " not connected to any")
-            self.client = None
-            if error:
+            if error and self.addr[0]:
                 self.print_method("Connection lost with"
                                   f" {self.host}"
                                   f":{self.port}")
@@ -122,6 +131,8 @@ class Client():
                 self.print_method("Disconnected from"
                                   f" {self.host}"
                                   f":{self.port}")
+            self.client = None
+            self.addr = (None, " not connected to any")
 
     def start(self, secure=False):
         if not sys.stdin.isatty():
@@ -156,6 +167,16 @@ class Client():
                         self.print_method("Connected to"
                                           f" {self.host}"
                                           f":{self.port}")
+                        try:
+                            self.buffer = int(
+                                self.client.recv(1024).decode("utf8"))
+                            self.send(f"ACK{self.buffer}", "control", "buffer")
+                        except Exception:
+                            self.print_method("Server didn't send buffer size!"
+                                              " Disconnecting...")
+                            self.disconnect_main()
+                            self.disconnect_recv(False)
+                            continue
                         self.receive_thread = threading.Thread(
                             name="Receive",
                             target=self.receive
@@ -193,14 +214,18 @@ class Client():
                     for k, v in self.help.items():
                         self.print_method(f"{k} - {v}")
                     try:
-                        self.send(shlex.join(msg))
+                        self.send("h", "command")
                     except (NameError, OSError, AttributeError):
                         pass
                 elif msg[0] == ":q":
                     self.exit(0)
                 else:
                     try:
-                        self.send(shlex.join(msg))
+                        msg = shlex.join(msg)
+                        if msg.startswith(":"):
+                            self.send(msg[1:], "command")
+                        else:
+                            self.send(msg)
                     except (NameError, OSError, AttributeError):
                         if msg[0].startswith(":"):
                             self.print_method(f"Unknown command: '{msg}'")
