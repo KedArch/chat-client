@@ -30,22 +30,22 @@ except ImportError:
 class Client():
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
-        self.buffer = 4096
         self.ps = PromptSession()
+        self.csep = "/"
         self.client = None
         self.addr = (None, " not connected to any")
-        self.welcome = "Welcome! Type :h for help."
+        self.welcome = f"Welcome! Type {self.csep}h for help."
         self.help = {
-                ":c": "connects to server",
-                ":dc": "disconnects from the server",
-                ":h": "help",
-                ":q": "quits program",
+                f"{self.csep}c $addr $port": "connects to server",
+                f"{self.csep}dc": "disconnects from the server",
+                f"{self.csep}h": "help",
+                f"{self.csep}q": "quits program",
                 }
         self.completions = {
-                ":c": {"localhost": {"1111": None}},
-                ":dc": None,
-                ":h": None,
-                ":q": None,
+                f"{self.csep}c": {"localhost": {"1111": None}},
+                f"{self.csep}dc": None,
+                f"{self.csep}h": None,
+                f"{self.csep}q": None,
                 }
         self.completer = NestedCompleter.from_nested_dict(self.completions)
         signal.signal(signal.SIGTERM, self.exit)
@@ -56,13 +56,12 @@ class Client():
     def update_completion(self, msg):
         for i in msg[1:]:
             pass
-        # self.merge_dicts(self.completions, new)
 
     async def input_method(self):
         with patch_stdout():
             msg = await self.ps.prompt_async(
                     "> ",
-                    complete_while_typing=True,
+                    complete_while_typing=False,
                     complete_in_thread=True,
                     completer=self.completer,
                     bottom_toolbar=self.bottom_text)
@@ -99,13 +98,13 @@ class Client():
             "content": content.strip()
         }
         data = json.dumps(tmp)
-        if not len(data) > 8*self.buffer//10:
+        if not len(data) > int(self.buffer*0.8):
             data = data.ljust(self.buffer)
             self.client.sendall(bytes(data, "utf8"))
         else:
             self.print_method(
                 "Your message is too large! It can be at most "
-                f"{8*self.buffer//10} (80% server's buffer "
+                f"{self.buffer*0.8} (80% server's buffer "
                 f"{self.buffer} is safe limit).")
 
     def exit(self, status, frame=None):
@@ -134,6 +133,88 @@ class Client():
             self.client = None
             self.addr = (None, " not connected to any")
 
+    def command_connect(self, msg, secure):
+        try:
+            if len(msg) > 3:
+                self.print_method("Invalid arguments")
+            if self.client:
+                self.disconnect_main()
+            self.host = msg[1]
+            self.port = int(msg[2])
+            addr = (self.host, self.port)
+            self.client = socket.socket(
+                    socket.AF_INET,
+                    socket.SOCK_STREAM)
+            if secure:
+                context = ssl.SSLContext(
+                    ssl.PROTOCOL_TLS_CLIENT)
+                context.load_verify_locations(secure)
+                self.client = ssl.wrap_socket(self.client)
+            self.client.settimeout(5)
+            self.client.connect(addr)
+            self.client.settimeout(None)
+            self.print_method("Connected to"
+                              f" {self.host}"
+                              f":{self.port}")
+            try:
+                self.buffer = int(
+                    self.client.recv(1024).decode("utf8"))
+                self.send(
+                    f"ACK{self.buffer}", "control", "buffer")
+            except Exception:
+                self.print_method(
+                    "Server didn't send buffer size!"
+                    " Disconnecting...")
+                self.disconnect_main()
+                self.disconnect_recv(False)
+                return True
+            self.addr = (self.host, self.port)
+            self.receive_thread = threading.Thread(
+                name="Receive",
+                target=self.receive
+            )
+            self.receive_thread.daemon = 1
+            self.receive_thread.start()
+            self.update_completion(msg)
+        except IndexError:
+            self.print_method("Invalid arguments")
+        except ConnectionRefusedError:
+            self.print_method("Host refused connection")
+        except socket.gaierror:
+            self.print_method("Unknown host")
+        except OSError as e:
+            if "[Errno 2]" in str(e):
+                self.print_method(
+                        "No certificate file. Please restart "
+                        "program with valid certificate.")
+
+            elif "[X509" in str(e):
+                self.print_method(
+                        "Invalid certificate. Please restart "
+                        "program with valid certificate.")
+            else:
+                self.print_method("No connection to host")
+        except (TypeError, ValueError, OverflowError):
+            self.print_method("Port must be in 0-65535 range")
+
+    def command_disconnect(self):
+        if self.client != "":
+            self.disconnect_main()
+        else:
+            self.print_method("Not connected to any host")
+
+    def command_help(self):
+        self.print_method("Client commands:")
+        for k, v in self.help.items():
+            self.print_method(f"{k} - {v}")
+        self.print_method(
+            f"Command separator: '{self.csep}' (or "
+            "'{csep}' as refered by server - use former)")
+        try:
+            self.send("h", "command")
+        except (NameError, OSError, AttributeError):
+            pass
+
     def start(self, secure=False):
         if not sys.stdin.isatty():
             sys.exit(66)
@@ -142,95 +223,31 @@ class Client():
             try:
                 self.completer = NestedCompleter.from_nested_dict(
                         self.completions)
-                msg = shlex.split(asyncio.run(self.input_method()))
-                if not msg:
-                    continue
-                elif msg[0] == ":c":
-                    try:
-                        if len(msg) > 3:
-                            self.print_method("Invalid arguments")
-                        if self.client:
-                            self.disconnect_main()
-                        self.host = msg[1]
-                        self.port = int(msg[2])
-                        self.addr = (self.host, self.port)
-                        self.client = socket.socket(
-                                socket.AF_INET,
-                                socket.SOCK_STREAM)
-                        if secure:
-                            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                            context.load_verify_locations(secure)
-                            self.client = ssl.wrap_socket(self.client)
-                        self.client.settimeout(5)
-                        self.client.connect(self.addr)
-                        self.client.settimeout(None)
-                        self.print_method("Connected to"
-                                          f" {self.host}"
-                                          f":{self.port}")
-                        try:
-                            self.buffer = int(
-                                self.client.recv(1024).decode("utf8"))
-                            self.send(f"ACK{self.buffer}", "control", "buffer")
-                        except Exception:
-                            self.print_method("Server didn't send buffer size!"
-                                              " Disconnecting...")
-                            self.disconnect_main()
-                            self.disconnect_recv(False)
+                msg = asyncio.run(self.input_method())
+                if msg.startswith(f"{self.csep}"):
+                    msg = shlex.split(msg)
+                    if not msg:
+                        continue
+                    elif msg[0] == f"{self.csep}c":
+                        if self.command_connect(msg, secure):
                             continue
-                        self.receive_thread = threading.Thread(
-                            name="Receive",
-                            target=self.receive
-                        )
-                        self.receive_thread.daemon = 1
-                        self.receive_thread.start()
-                        self.update_completion(msg)
-                    except IndexError:
-                        self.print_method("Invalid arguments")
-                    except ConnectionRefusedError:
-                        self.print_method("Host refused connection")
-                    except socket.gaierror:
-                        self.print_method("Unknown host")
-                    except OSError as e:
-                        if "[Errno 2]" in str(e):
-                            self.print_method(
-                                    "No certificate file. Please restart "
-                                    "program with valid certificate.")
-
-                        elif "[X509" in str(e):
-                            self.print_method(
-                                    "Invalid certificate. Please restart "
-                                    "program with valid certificate.")
-                        else:
-                            self.print_method("No connection to host")
-                    except (TypeError, ValueError, OverflowError):
-                        self.print_method("Port must be in 0-65535 range")
-                elif msg[0] == ":dc":
-                    if self.client != "":
-                        self.disconnect_main()
+                    elif msg[0] == f"{self.csep}dc":
+                        self.command_disconnect()
+                    elif msg[0] == f"{self.csep}h":
+                        self.command_help()
+                    elif msg[0] == f"{self.csep}q":
+                        self.exit(0)
                     else:
-                        self.print_method("Not connected to any host")
-                elif msg[0] == ":h":
-                    self.print_method("Client commands:")
-                    for k, v in self.help.items():
-                        self.print_method(f"{k} - {v}")
-                    try:
-                        self.send("h", "command")
-                    except (NameError, OSError, AttributeError):
-                        pass
-                elif msg[0] == ":q":
-                    self.exit(0)
+                        try:
+                            msg = shlex.join(msg)
+                            self.send(msg[1:], "command")
+                        except (NameError, OSError, AttributeError):
+                            self.print_method(f"Unknown command: '{msg}'")
                 else:
                     try:
-                        msg = shlex.join(msg)
-                        if msg.startswith(":"):
-                            self.send(msg[1:], "command")
-                        else:
-                            self.send(msg)
+                        self.send(msg)
                     except (NameError, OSError, AttributeError):
-                        if msg[0].startswith(":"):
-                            self.print_method(f"Unknown command: '{msg}'")
-                        else:
-                            self.print_method("Not connected to any host")
+                        self.print_method("Not connected to any host")
             except EOFError:
                 self.exit(0)
             except KeyboardInterrupt:
