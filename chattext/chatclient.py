@@ -81,7 +81,12 @@ class Client():
                         break
                     data = json.loads(data)
                     if data["type"] == "message":
-                        self.print_method(data["content"])
+                        if data["attrib"] == "csep":
+                            self.print_method(
+                                data["content"].replace(
+                                    "{csep}", self.csep))
+                        else:
+                            self.print_method(data["content"])
                     elif data["type"] == "privmsg":
                         pass
                     elif data["type"] == "control":
@@ -204,12 +209,10 @@ class Client():
             self.print_method("Not connected to any host")
 
     def command_help(self):
+        self.print_method(f"Command separator: '{self.csep}'")
         self.print_method("Client commands:")
         for k, v in self.help.items():
             self.print_method(f"{k} - {v}")
-        self.print_method(
-            f"Command separator: '{self.csep}' (or "
-            "'{csep}' as refered by server - use former)")
         try:
             self.send("h", "command")
         except (NameError, OSError, AttributeError):
