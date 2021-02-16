@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # Todo:
 # -update completion
-# -timeout
 # -config
 # -colors
 # -commands
@@ -71,17 +70,19 @@ class Client():
         print(msg)
 
     def receive(self):
+        timeout = 0
         while True:
             try:
-                r, _, _ = select.select([self.client], [], [], 1)
-                if r:
+                rdy, _, _ = select.select([self.client], [], [], 1)
+                if rdy and timeout < self.timeout:
+                    timeout = 0
                     data = self.client.recv(self.buffer).decode("utf8")
                     if data == "":
                         self.disconnect_recv(False)
                         break
                     data = json.loads(data)
                     if data["type"] == "message":
-                        if data["attrib"] == "csep":
+                        if "csep" in data["attrib"]:
                             self.print_method(
                                 data["content"].replace(
                                     "{csep}", self.csep))
@@ -90,13 +91,22 @@ class Client():
                     elif data["type"] == "privmsg":
                         pass
                     elif data["type"] == "control":
-                        pass
+                        if "alive" in data["attrib"]:
+                            self.send("", "control", ["alive"])
+                elif timeout >= self.timeout:
+                    raise ConnectionAbortedError
+                else:
+                    timeout += 1
             except (OSError, ValueError, ConnectionResetError,
                     json.JSONDecodeError, TypeError):
                 self.disconnect_recv(True)
                 break
+            except ConnectionAbortedError:
+                self.print_method(
+                    f"Connection with {self.host}:{self.port} timed out.")
+                self.disconnect_recv(True)
 
-    def send(self, content, mtype="message", attrib=None):
+    def send(self, content, mtype="message", attrib=[]):
         tmp = {
             "type": mtype,
             "attrib": attrib,
@@ -119,24 +129,32 @@ class Client():
     def disconnect_main(self):
         if self.client:
             try:
-                self.client.close()
                 self.addr = (None, " not connected to any")
-                self.receive_thread.join()
-            except (BrokenPipeError, AttributeError):
+                self.client.shutdown(socket.SHUT_RDWR)
+                self.client.close()
+                self.client = None
+            except (BrokenPipeError, AttributeError, OSError):
                 pass
 
     def disconnect_recv(self, error):
         if self.client:
             if error and self.addr[0]:
-                self.print_method("Connection lost with"
-                                  f" {self.host}"
-                                  f":{self.port}")
+                self.print_method(
+                    "Connection lost with"
+                    f" {self.host}"
+                    f":{self.port}")
             else:
-                self.print_method("Disconnected from"
-                                  f" {self.host}"
-                                  f":{self.port}")
-            self.client = None
+                self.print_method(
+                    "Disconnected from"
+                    f" {self.host}"
+                    f":{self.port}")
             self.addr = (None, " not connected to any")
+            self.client = None
+        else:
+            self.print_method(
+                "Disconnected from"
+                f" {self.host}"
+                f":{self.port}")
 
     def command_connect(self, msg, secure):
         try:
@@ -155,21 +173,34 @@ class Client():
                     ssl.PROTOCOL_TLS_CLIENT)
                 context.load_verify_locations(secure)
                 self.client = ssl.wrap_socket(self.client)
-            self.client.settimeout(5)
+            self.client.settimeout(10)
             self.client.connect(addr)
             self.client.settimeout(None)
             self.print_method("Connected to"
                               f" {self.host}"
                               f":{self.port}")
             try:
-                self.buffer = int(
-                    self.client.recv(1024).decode("utf8"))
-                self.send(
-                    f"ACK{self.buffer}", "control", "buffer")
+                rdy, _, _ = select.select([self.client], [], [], 10)
+                if rdy:
+                    self.buffer = int(
+                        self.client.recv(1024).decode("utf8"))
+                    self.send(
+                        f"ACK{self.buffer}", "control", ["buffer"])
+                    rdy2, _, _ = select.select([self.client], [], [], 10)
+                    if rdy:
+                        response = json.loads(self.client.recv(
+                            self.buffer).decode("utf8"))
+                        if response["type"] == "control" and\
+                                "timeout" in response["attrib"]:
+                            self.timeout = float(response["content"])
+                        else:
+                            raise ConnectionRefusedError
+                else:
+                    raise ConnectionRefusedError
             except Exception:
                 self.print_method(
-                    "Server didn't send buffer size!"
-                    " Disconnecting...")
+                    "Failed to properly communicate with server or "
+                    "hit 30s waiting limit! Disconnecting...")
                 self.disconnect_main()
                 self.disconnect_recv(False)
                 return True
@@ -203,7 +234,7 @@ class Client():
             self.print_method("Port must be in 0-65535 range")
 
     def command_disconnect(self):
-        if self.client != "":
+        if self.client:
             self.disconnect_main()
         else:
             self.print_method("Not connected to any host")
@@ -229,9 +260,7 @@ class Client():
                 msg = asyncio.run(self.input_method())
                 if msg.startswith(f"{self.csep}"):
                     msg = shlex.split(msg)
-                    if not msg:
-                        continue
-                    elif msg[0] == f"{self.csep}c":
+                    if msg[0] == f"{self.csep}c":
                         if self.command_connect(msg, secure):
                             continue
                     elif msg[0] == f"{self.csep}dc":
@@ -247,13 +276,15 @@ class Client():
                         except (NameError, OSError, AttributeError):
                             self.print_method(f"Unknown command: '{msg}'")
                 else:
+                    if not msg.strip():
+                        continue
                     try:
                         self.send(msg)
                     except (NameError, OSError, AttributeError):
                         self.print_method("Not connected to any host")
             except EOFError:
                 self.exit(0)
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, ValueError):
                 continue
 
 
