@@ -35,17 +35,17 @@ class Client():
         self.addr = (None, " not connected to any")
         self.welcome = f"Welcome! Type {self.csep}h for help."
         self.help = {
-                f"{self.csep}c $addr $port": "connects to server",
-                f"{self.csep}dc": "disconnects from the server",
-                f"{self.csep}h": "help",
-                f"{self.csep}q": "quits program",
-                }
+            f"{self.csep}c $addr $port": "connects to server",
+            f"{self.csep}dc": "disconnects from the server",
+            f"{self.csep}h": "help",
+            f"{self.csep}q": "quits program",
+        }
         self.completions = {
-                f"{self.csep}c": {"localhost": {"1111": None}},
-                f"{self.csep}dc": None,
-                f"{self.csep}h": None,
-                f"{self.csep}q": None,
-                }
+            f"{self.csep}c": {"localhost": {"1111": None}},
+            f"{self.csep}dc": None,
+            f"{self.csep}h": None,
+            f"{self.csep}q": None,
+        }
         self.completer = NestedCompleter.from_nested_dict(self.completions)
         signal.signal(signal.SIGTERM, self.exit)
 
@@ -59,11 +59,11 @@ class Client():
     async def input_method(self):
         with patch_stdout():
             msg = await self.ps.prompt_async(
-                    "> ",
-                    complete_while_typing=False,
-                    complete_in_thread=True,
-                    completer=self.completer,
-                    bottom_toolbar=self.bottom_text)
+                "> ",
+                complete_while_typing=False,
+                complete_in_thread=True,
+                completer=self.completer,
+                bottom_toolbar=self.bottom_text)
         return msg
 
     def print_method(self, msg):
@@ -166,8 +166,8 @@ class Client():
             self.port = int(msg[2])
             addr = (self.host, self.port)
             self.client = socket.socket(
-                    socket.AF_INET,
-                    socket.SOCK_STREAM)
+                socket.AF_INET,
+                socket.SOCK_STREAM)
             if secure:
                 context = ssl.SSLContext(
                     ssl.PROTOCOL_TLS_CLIENT)
@@ -221,13 +221,13 @@ class Client():
         except OSError as e:
             if "[Errno 2]" in str(e):
                 self.print_method(
-                        "No certificate file. Please restart "
-                        "program with valid certificate.")
+                    "No certificate file. Please restart "
+                    "program with valid certificate.")
 
             elif "[X509" in str(e):
                 self.print_method(
-                        "Invalid certificate. Please restart "
-                        "program with valid certificate.")
+                    "Invalid certificate. Please restart "
+                    "program with valid certificate.")
             else:
                 self.print_method("No connection to host")
         except (TypeError, ValueError, OverflowError):
@@ -256,7 +256,7 @@ class Client():
         while True:
             try:
                 self.completer = NestedCompleter.from_nested_dict(
-                        self.completions)
+                    self.completions)
                 msg = asyncio.run(self.input_method())
                 if msg.startswith(f"{self.csep}"):
                     msg = shlex.split(msg)
@@ -290,11 +290,11 @@ class Client():
 
 def parse_args():
     arg = argparse.ArgumentParser(
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-            description="Simple chat client intended for personal use",
-            epilog="Error codes an their element:"
-                   "\n65 - prompt_toolkit import"
-                   "\n66 - not a pts/tty")
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Simple chat client intended for personal use",
+        epilog="Error codes an their element:"
+        "\n65 - prompt_toolkit import"
+        "\n66 - not a pts/tty")
     arg.add_argument(
         "-s", "--secure",
         help="Enables SSL/TLS. Argument is certfile for auth.")
