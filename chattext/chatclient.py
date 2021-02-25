@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
-# Todo:
-# -update completion
-# -config
-# -colors
-# -commands
+#!/usr/bin/env python
 import os
 import sys
 import ssl
@@ -27,6 +22,9 @@ except ImportError:
 
 
 class Client():
+    """
+    Main client class
+    """
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.ps = PromptSession()
@@ -50,13 +48,22 @@ class Client():
         signal.signal(signal.SIGTERM, self.exit)
 
     def bottom_text(self):
+        """
+        Returns text for bottom toolbar
+        """
         return f"Server> {self.addr[0]}:{self.addr[1]}"
 
     def update_completion(self, msg):
+        """
+        Manipulates completion (WIP)
+        """
         for i in msg[1:]:
             pass
 
     async def input_method(self):
+        """
+        Manages input asynchronously (without destroying prompt)
+        """
         with patch_stdout():
             msg = await self.ps.prompt_async(
                 "> ",
@@ -67,9 +74,15 @@ class Client():
         return msg
 
     def print_method(self, msg):
+        """
+        Manages output
+        """
         print(msg)
 
     def receive(self):
+        """
+        Handles communication with server
+        """
         timeout = 0
         while True:
             try:
@@ -88,8 +101,6 @@ class Client():
                                     "{csep}", self.csep))
                         else:
                             self.print_method(data["content"])
-                    elif data["type"] == "privmsg":
-                        pass
                     elif data["type"] == "control":
                         if "alive" in data["attrib"]:
                             self.send("", "control", ["alive"])
@@ -107,6 +118,9 @@ class Client():
                 self.disconnect_recv(True)
 
     def send(self, content, mtype="message", attrib=[]):
+        """
+        Handles message sending with correct protocol
+        """
         tmp = {
             "type": mtype,
             "attrib": attrib,
@@ -123,10 +137,16 @@ class Client():
                 f"{self.buffer} is safe limit).")
 
     def exit(self, status, frame=None):
+        """
+        Handles exit signal
+        """
         self.disconnect_main()
         sys.exit(status)
 
     def disconnect_main(self):
+        """
+        Resets main thread variables
+        """
         if self.client:
             try:
                 self.addr = (None, " not connected to any")
@@ -137,6 +157,9 @@ class Client():
                 pass
 
     def disconnect_recv(self, error):
+        """
+        Handles receive function exit
+        """
         if self.client:
             if error and self.addr[0]:
                 self.print_method(
@@ -157,6 +180,9 @@ class Client():
                 f":{self.port}")
 
     def command_connect(self, msg, secure):
+        """
+        Connect functionality
+        """
         try:
             if len(msg) > 3:
                 self.print_method("Invalid arguments")
@@ -180,13 +206,13 @@ class Client():
                               f" {self.host}"
                               f":{self.port}")
             try:
-                rdy, _, _ = select.select([self.client], [], [], 10)
+                rdy, _, _ = select.select([self.client], [], [], 15)
                 if rdy:
                     self.buffer = int(
                         self.client.recv(1024).decode("utf8"))
                     self.send(
                         f"ACK{self.buffer}", "control", ["buffer"])
-                    rdy2, _, _ = select.select([self.client], [], [], 10)
+                    rdy2, _, _ = select.select([self.client], [], [], 15)
                     if rdy:
                         response = json.loads(self.client.recv(
                             self.buffer).decode("utf8"))
@@ -234,12 +260,18 @@ class Client():
             self.print_method("Port must be in 0-65535 range")
 
     def command_disconnect(self):
+        """
+        Disconnect functionality
+        """
         if self.client:
             self.disconnect_main()
         else:
             self.print_method("Not connected to any host")
 
     def command_help(self):
+        """
+        Help functionality
+        """
         self.print_method(f"Command separator: '{self.csep}'")
         self.print_method("Client commands:")
         for k, v in self.help.items():
@@ -250,6 +282,9 @@ class Client():
             pass
 
     def start(self, secure=False):
+        """
+        Main thread functionality
+        """
         if not sys.stdin.isatty():
             sys.exit(66)
         self.print_method(self.welcome)
@@ -289,6 +324,9 @@ class Client():
 
 
 def parse_args():
+    """
+    Parses command line arguments
+    """
     arg = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Simple chat client intended for personal use",
