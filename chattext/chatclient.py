@@ -3,6 +3,7 @@ import os
 import sys
 import ssl
 import json
+import time
 import shlex
 import select
 import signal
@@ -188,6 +189,7 @@ class Client():
                 self.print_method("Invalid arguments")
             if self.client:
                 self.disconnect_main()
+            time.sleep(1)
             self.host = msg[1]
             self.port = int(msg[2])
             addr = (self.host, self.port)
