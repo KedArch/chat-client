@@ -322,7 +322,7 @@ class Client():
         except (NameError, OSError, AttributeError):
             pass
 
-    def start(self, secure=False):
+    def start(self, secure=False, command=""):
         """
         Main thread functionality
         """
@@ -333,7 +333,11 @@ class Client():
             try:
                 self.completer = NestedCompleter.from_nested_dict(
                     self.completions)
-                msg = asyncio.run(self.input_method())
+                if command:
+                    msg = command[0]
+                    command.pop(0)
+                else:
+                    msg = asyncio.run(self.input_method())
                 if msg.startswith(f"{self.csep}"):
                     msg = shlex.split(msg)
                     if msg[0] == f"{self.csep}c":
@@ -377,7 +381,11 @@ def parse_args():
     arg.add_argument(
         "-s", "--secure",
         help="Enables SSL/TLS. Argument is certfile for auth.")
-    Client().start(arg.parse_args().secure)
+    arg.add_argument(
+        "-c", "--command", nargs="*",
+        help="Allows start with given commands (same as in interactive)")
+    args = arg.parse_args()
+    Client().start(args.secure, args.command)
 
 
 if __name__ == "__main__":
