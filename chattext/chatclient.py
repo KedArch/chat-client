@@ -45,8 +45,16 @@ class Client():
             f"{self.csep}h": None,
             f"{self.csep}q": None,
         }
+        self.default_completions = self.completions.copy()
         self.completer = NestedCompleter.from_nested_dict(self.completions)
         signal.signal(signal.SIGTERM, self.exit)
+        self.completion_replacements = {
+            "nick": "nick",
+            "user": "user",
+            "pass": "pass",
+            "message": "message",
+            "sname": "sname"
+        }
 
     def bottom_text(self):
         """
@@ -54,11 +62,33 @@ class Client():
         """
         return f"Server> {self.addr[0]}:{self.addr[1]}"
 
-    def update_completion(self, msg):
+    def dict_to_dict(self, orig, clist):
         """
-        Manipulates completion (WIP)
+        Helps merging completion parameters
         """
-        for i in msg[1:]:
+        if len(clist) == 1:
+            orig[clist[0]] = None
+        else:
+            orig[clist[0]] = {clist[1]: None}
+            old = clist[0]
+            clist.pop(0)
+            orig[old] = self.dict_to_dict(orig[old], clist)
+        return orig
+
+    def update_completion(self, command):
+        """
+        Manipulates completion
+        """
+        if not command.startswith(self.csep):
+            return
+        command = command.split("-", 1)[0].split()
+        for k, v in self.completion_replacements.items():
+            for i in range(len(command)):
+                command[i] = command[i].replace(f"${k}", v)
+        try:
+            self.completions = self.dict_to_dict(
+                self.completions, command)
+        except Exception:
             pass
 
     async def input_method(self):
@@ -68,7 +98,7 @@ class Client():
         with patch_stdout():
             msg = await self.ps.prompt_async(
                 "> ",
-                complete_while_typing=False,
+                complete_while_typing=True,
                 complete_in_thread=True,
                 completer=self.completer,
                 bottom_toolbar=self.bottom_text)
@@ -97,9 +127,10 @@ class Client():
                     data = json.loads(data)
                     if data['type'] == "message":
                         if "csep" in data['attrib']:
-                            self.print_method(
-                                data['content'].replace(
-                                    "{csep}", self.csep))
+                            command = data['content'].replace(
+                                "{csep}", self.csep)
+                            self.update_completion(command)
+                            self.print_method(command)
                         else:
                             self.print_method(data['content'])
                     elif data['type'] == "control":
@@ -181,6 +212,7 @@ class Client():
                 "Disconnected from"
                 f" {self.host}"
                 f":{self.port}")
+        self.completions = self.default_completions
 
     def command_connect(self, msg, secure):
         """
@@ -241,7 +273,6 @@ class Client():
             )
             self.receive_thread.daemon = 1
             self.receive_thread.start()
-            self.update_completion(msg)
         except IndexError:
             self.print_method("Invalid arguments")
         except ConnectionRefusedError:
@@ -280,6 +311,12 @@ class Client():
         self.print_method("Client commands:")
         for k, v in self.help.items():
             self.print_method(f"{k} - {v}")
+        self.print_method(
+            "For server command completion call this "
+            "command  when connected to server\n"
+            "Completion for given command will be active "
+            "after it will be printed in there\n"
+            "There may be need to press 'ENTER' once for it to appear")
         try:
             self.send("h", "command")
         except (NameError, OSError, AttributeError):
