@@ -95,16 +95,16 @@ class Client():
                         self.disconnect_recv(False)
                         break
                     data = json.loads(data)
-                    if data["type"] == "message":
-                        if "csep" in data["attrib"]:
+                    if data['type'] == "message":
+                        if "csep" in data['attrib']:
                             self.print_method(
-                                data["content"].replace(
+                                data['content'].replace(
                                     "{csep}", self.csep))
                         else:
-                            self.print_method(data["content"])
-                    elif data["type"] == "control":
-                        if "alive" in data["attrib"]:
-                            self.send("", "control", ["alive"])
+                            self.print_method(data['content'])
+                    elif data['type'] == "control":
+                        if "alive" in data['attrib']:
+                            self.send("", "control", ['alive'])
                 elif timeout >= self.timeout:
                     raise ConnectionAbortedError
                 else:
@@ -117,6 +117,8 @@ class Client():
                 self.print_method(
                     f"Connection with {self.host}:{self.port} timed out.")
                 self.disconnect_recv(True)
+            except AttributeError:
+                self.disconnect_recv(False)
 
     def send(self, content, mtype="message", attrib=[]):
         """
@@ -213,14 +215,14 @@ class Client():
                     self.buffer = int(
                         self.client.recv(1024).decode("utf8"))
                     self.send(
-                        f"ACK{self.buffer}", "control", ["buffer"])
+                        f"ACK{self.buffer}", "control", ['buffer'])
                     rdy2, _, _ = select.select([self.client], [], [], 15)
                     if rdy:
                         response = json.loads(self.client.recv(
                             self.buffer).decode("utf8"))
-                        if response["type"] == "control" and\
-                                "timeout" in response["attrib"]:
-                            self.timeout = float(response["content"])
+                        if response['type'] == "control" and\
+                                "timeout" in response['attrib']:
+                            self.timeout = float(response['content'])
                         else:
                             raise ConnectionRefusedError
                 else:
