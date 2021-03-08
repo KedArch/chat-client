@@ -128,7 +128,7 @@ class Client():
                     data = json.loads(data)
                     if data['type'] == "message":
                         if "csep" in data["attrib"]:
-                            command = data['content'].replace(
+                            data['content'] = data['content'].replace(
                                 "{csep}", self.csep)
                         if "welcome" in data["attrib"]:
                             self.fully_connected = True
