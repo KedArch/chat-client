@@ -45,6 +45,7 @@ class Client():
             f"{self.csep}h": None,
             f"{self.csep}q": None,
         }
+        self.fully_connected = False
         self.default_completions = self.completions.copy()
         self.completer = NestedCompleter.from_nested_dict(self.completions)
         signal.signal(signal.SIGTERM, self.exit)
@@ -126,16 +127,19 @@ class Client():
                         break
                     data = json.loads(data)
                     if data['type'] == "message":
-                        if "csep" in data['attrib']:
+                        if "csep" in data["attrib"]:
                             command = data['content'].replace(
                                 "{csep}", self.csep)
-                            self.update_completion(command)
-                            self.print_method(command)
-                        else:
-                            self.print_method(data['content'])
+                        if "welcome" in data["attrib"]:
+                            self.fully_connected = True
+                        self.print_method(data['content'])
                     elif data['type'] == "control":
                         if "alive" in data['attrib']:
                             self.send("", "control", ['alive'])
+                        elif "csep" in data['attrib']:
+                            command = data['content'].replace(
+                                "{csep}", self.csep)
+                            self.update_completion(command)
                 elif timeout >= self.timeout:
                     raise ConnectionAbortedError
                 else:
@@ -213,6 +217,7 @@ class Client():
                 f" {self.host}"
                 f":{self.port}")
         self.completions = self.default_completions
+        self.fully_connected = False
 
     def command_connect(self, msg, secure):
         """
@@ -223,7 +228,8 @@ class Client():
                 self.print_method("Invalid arguments")
             if self.client:
                 self.disconnect_main()
-            time.sleep(1)
+            while self.fully_connected:
+                time.sleep(0.1)
             self.host = msg[1]
             self.port = int(msg[2])
             addr = (self.host, self.port)
@@ -273,6 +279,8 @@ class Client():
             )
             self.receive_thread.daemon = 1
             self.receive_thread.start()
+            while not self.fully_connected:
+                time.sleep(0.1)
         except IndexError:
             self.print_method("Invalid arguments")
         except ConnectionRefusedError:
