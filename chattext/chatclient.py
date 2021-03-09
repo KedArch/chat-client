@@ -308,6 +308,8 @@ class Client():
         """
         if self.client:
             self.disconnect_main()
+            while self.fully_connected:
+                time.sleep(0.1)
         else:
             self.print_method("Not connected to any host")
 
