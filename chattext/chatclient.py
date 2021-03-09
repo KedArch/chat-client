@@ -53,6 +53,7 @@ class Client():
             "nick": "nick",
             "user": "user",
             "pass": "pass",
+            "newpass": "newpass",
             "message": "message",
             "sname": "sname"
         }
@@ -144,16 +145,18 @@ class Client():
                     raise ConnectionAbortedError
                 else:
                     timeout += 1
-            except (OSError, ValueError, ConnectionResetError,
-                    json.JSONDecodeError, TypeError):
+            except (ConnectionResetError, json.JSONDecodeError, TypeError):
                 self.disconnect_recv(True)
                 break
             except ConnectionAbortedError:
                 self.print_method(
-                    f"Connection with {self.host}:{self.port} timed out.")
+                    f"Connection with {self.addr[0]}:"
+                    f"{self.addr[1]} timed out.")
                 self.disconnect_recv(True)
-            except AttributeError:
+                break
+            except (OSError, ValueError, AttributeError):
                 self.disconnect_recv(False)
+                break
 
     def send(self, content, mtype="message", attrib=[]):
         """
@@ -198,9 +201,11 @@ class Client():
             try:
                 self.client.shutdown(socket.SHUT_RDWR)
                 self.client.close()
+                self.receive_thread.join()
             except (BrokenPipeError, AttributeError, OSError):
                 pass
-        self.reset()
+        if self.fully_connected:
+            self.reset()
 
     def disconnect_recv(self, error):
         """
@@ -210,19 +215,20 @@ class Client():
             if error and self.addr[0]:
                 self.print_method(
                     "Connection lost with"
-                    f" {self.host}"
-                    f":{self.port}")
+                    f" {self.addr[0]}"
+                    f":{self.addr[1]}")
             else:
                 self.print_method(
                     "Disconnected from"
-                    f" {self.host}"
-                    f":{self.port}")
+                    f" {self.addr[0]}"
+                    f":{self.addr[1]}")
         else:
             self.print_method(
                 "Disconnected from"
-                f" {self.host}"
-                f":{self.port}")
-        self.reset()
+                f" {self.addr[0]}"
+                f":{self.addr[1]}")
+        if self.fully_connected:
+            self.reset()
 
     def command_connect(self, msg, secure):
         """
@@ -235,9 +241,8 @@ class Client():
                 self.disconnect_main()
             while self.fully_connected:
                 time.sleep(0.1)
-            self.host = msg[1]
-            self.port = int(msg[2])
-            addr = (self.host, self.port)
+            host = msg[1]
+            port = int(msg[2])
             self.client = socket.socket(
                 socket.AF_INET,
                 socket.SOCK_STREAM)
@@ -247,11 +252,11 @@ class Client():
                 context.load_verify_locations(secure)
                 self.client = ssl.wrap_socket(self.client)
             self.client.settimeout(10)
-            self.client.connect(addr)
+            self.client.connect((host, port))
             self.client.settimeout(None)
             self.print_method("Connected to"
-                              f" {self.host}"
-                              f":{self.port}")
+                              f" {host}"
+                              f":{port}")
             try:
                 rdy, _, _ = select.select([self.client], [], [], 15)
                 if rdy:
@@ -277,7 +282,7 @@ class Client():
                 self.disconnect_main()
                 self.disconnect_recv(False)
                 return True
-            self.addr = (self.host, self.port)
+            self.addr = (host, port)
             self.receive_thread = threading.Thread(
                 name="Receive",
                 target=self.receive
