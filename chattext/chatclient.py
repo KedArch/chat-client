@@ -181,18 +181,26 @@ class Client():
         self.disconnect_main()
         sys.exit(status)
 
+    def reset(self):
+        """
+        Resets server connection variables
+        """
+        self.completions = self.default_completions
+        self.fully_connected = False
+        self.addr = (None, " not connected to any")
+        self.client = None
+
     def disconnect_main(self):
         """
-        Resets main thread variables
+        Forces receive thread to exit
         """
         if self.client:
             try:
-                self.addr = (None, " not connected to any")
                 self.client.shutdown(socket.SHUT_RDWR)
                 self.client.close()
-                self.client = None
             except (BrokenPipeError, AttributeError, OSError):
                 pass
+        self.reset()
 
     def disconnect_recv(self, error):
         """
@@ -209,15 +217,12 @@ class Client():
                     "Disconnected from"
                     f" {self.host}"
                     f":{self.port}")
-            self.addr = (None, " not connected to any")
-            self.client = None
         else:
             self.print_method(
                 "Disconnected from"
                 f" {self.host}"
                 f":{self.port}")
-        self.completions = self.default_completions
-        self.fully_connected = False
+        self.reset()
 
     def command_connect(self, msg, secure):
         """
