@@ -204,8 +204,7 @@ class Client():
                 self.receive_thread.join()
             except (BrokenPipeError, AttributeError, OSError):
                 pass
-        if self.fully_connected:
-            self.reset()
+        self.reset()
 
     def disconnect_recv(self, error):
         """
@@ -227,8 +226,7 @@ class Client():
                 "Disconnected from"
                 f" {self.addr[0]}"
                 f":{self.addr[1]}")
-        if self.fully_connected:
-            self.reset()
+        self.reset()
 
     def command_connect(self, msg, secure):
         """
@@ -331,12 +329,6 @@ class Client():
         self.print_method("Client commands:")
         for k, v in self.help.items():
             self.print_method(f"{k} - {v}")
-        self.print_method(
-            "For server command completion call this "
-            "command  when connected to server\n"
-            "Completion for given command will be active "
-            "after it will be printed in there\n"
-            "There may be need to press 'ENTER' once for it to appear")
         try:
             self.send("h", "command")
         except (NameError, OSError, AttributeError):
