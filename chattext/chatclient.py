@@ -15,6 +15,7 @@ try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.completion import NestedCompleter
+    from prompt_toolkit.styles import Style
 except ImportError:
     print("This client requires prompt_toolkit library to work.\n"
           "Download it with below command\n"
@@ -45,6 +46,9 @@ class Client():
             f"{self.csep}h": None,
             f"{self.csep}q": None,
         }
+        self.style = Style.from_dict({
+                'bottom-toolbar': 'noreverse #ffffff bg:#000000',
+        })
         self.fully_connected = False
         self.default_completions = self.completions.copy()
         self.completer = NestedCompleter.from_nested_dict(self.completions)
@@ -62,7 +66,8 @@ class Client():
         """
         Returns text for bottom toolbar
         """
-        return f"Server> {self.addr[0]}:{self.addr[1]}"
+        return [("class:bottom-toolbar",
+                f"Server> {self.addr[0]}:{self.addr[1]}")]
 
     def dict_to_dict(self, orig, clist):
         """
@@ -103,7 +108,8 @@ class Client():
                 complete_while_typing=True,
                 complete_in_thread=True,
                 completer=self.completer,
-                bottom_toolbar=self.bottom_text)
+                bottom_toolbar=self.bottom_text,
+                style=self.style)
         return msg
 
     def print_method(self, msg):
