@@ -251,10 +251,10 @@ class Client():
                 socket.AF_INET,
                 socket.SOCK_STREAM)
             if secure:
-                context = ssl.SSLContext(
+                ssl_context = ssl.SSLContext(
                     ssl.PROTOCOL_TLS_CLIENT)
-                context.load_verify_locations(secure)
-                self.client = ssl.wrap_socket(self.client)
+                ssl_context.load_verify_locations(secure)
+                self.client = ssl_context.wrap_socket(self.client)
             self.client.settimeout(10)
             self.client.connect((host, port))
             self.client.settimeout(None)
