@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 import os
 import sys
-import ssl
 import json
-import time
 import shlex
-import select
 import signal
-import socket
-import asyncio
 import argparse
-import threading
+import asyncio
+from asyncio.selector_events import ssl
+from asyncio.selector_events import socket
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -31,8 +28,10 @@ class Client():
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.ps = PromptSession()
         self.csep = "/"
+        self.sname = None
+        self.nick = ""
         self.client = None
-        self.addr = (None, " not connected to any")
+        self.addr = ("You are not connected ", " to any server")
         self.welcome = f"Welcome! Type {self.csep}h for help."
         self.help = {
             f"{self.csep}c $addr $port": "connects to server",
@@ -67,9 +66,12 @@ class Client():
         Returns text for bottom toolbar
         """
         return [("class:bottom-toolbar",
-                f"Server> {self.addr[0]}:{self.addr[1]}")]
+                f"{self.sname}> {self.addr[0]}:{self.addr[1]}")]
 
-    def dict_to_dict(self, orig, clist):
+    def rprompt(self):
+        return self.nick
+
+    async def dict_to_dict(self, orig, clist):
         """
         Helps merging completion parameters
         """
@@ -79,10 +81,10 @@ class Client():
             orig[clist[0]] = {clist[1]: None}
             old = clist[0]
             clist.pop(0)
-            orig[old] = self.dict_to_dict(orig[old], clist)
+            orig[old] = await self.dict_to_dict(orig[old], clist)
         return orig
 
-    def update_completion(self, command):
+    async def update_completion(self, command):
         """
         Manipulates completion
         """
@@ -93,7 +95,7 @@ class Client():
             for i in range(len(command)):
                 command[i] = command[i].replace(f"${k}", v)
         try:
-            self.completions = self.dict_to_dict(
+            self.completions = await self.dict_to_dict(
                 self.completions, command)
         except Exception:
             pass
@@ -109,6 +111,7 @@ class Client():
                 complete_in_thread=True,
                 completer=self.completer,
                 bottom_toolbar=self.bottom_text,
+                rprompt=self.rprompt,
                 style=self.style)
         return msg
 
@@ -118,53 +121,57 @@ class Client():
         """
         print(msg)
 
-    def receive(self):
+    async def receive(self):
         """
         Handles communication with server
         """
         timeout = 0
         while True:
             try:
-                rdy, _, _ = select.select([self.client], [], [], 1)
-                if rdy and timeout < self.timeout:
-                    timeout = 0
-                    data = self.client.recv(self.buffer).decode("utf8")
-                    if data == "":
-                        self.disconnect_recv(False)
-                        break
-                    data = json.loads(data)
-                    if data['type'] == "message":
-                        if "csep" in data["attrib"]:
-                            data['content'] = data['content'].replace(
-                                "{csep}", self.csep)
-                        if "welcome" in data["attrib"]:
-                            self.fully_connected = True
-                        self.print_method(data['content'])
-                    elif data['type'] == "control":
-                        if "alive" in data['attrib']:
-                            self.send("", "control", ['alive'])
-                        elif "csep" in data['attrib']:
-                            command = data['content'].replace(
-                                "{csep}", self.csep)
-                            self.update_completion(command)
-                elif timeout >= self.timeout:
-                    raise ConnectionAbortedError
+                if self.client:
+                    data = await asyncio.wait_for(
+                        self.loop.sock_recv(self.client, self.buffer), 1)
                 else:
-                    timeout += 1
+                    raise AttributeError
+                timeout = 0
+                if not data:
+                    raise AttributeError
+                data = json.loads(data.decode("utf8"))
+                if data['type'] == "message":
+                    if data["attrib"] == "csep":
+                        data['content'] = data['content'].replace(
+                            "{csep}", self.csep)
+                    if data['attrib'] == "welcome":
+                        self.fully_connected = True
+                    self.print_method(data['content'])
+                elif data['type'] == "control":
+                    if data['attrib'] == "alive":
+                        await self.send("", "control", 'alive')
+                    elif data['attrib'] == "csep":
+                        command = data['content'].replace(
+                            "{csep}", self.csep)
+                        await self.update_completion(command)
+                    elif data['attrib'] == "sname":
+                        self.sname = data['content']
+                    elif data['attrib'] == "client":
+                        self.nick = data['content']
             except (ConnectionResetError, json.JSONDecodeError, TypeError):
                 self.disconnect_recv(True)
                 break
-            except ConnectionAbortedError:
-                self.print_method(
-                    f"Connection with {self.addr[0]}:"
-                    f"{self.addr[1]} timed out.")
-                self.disconnect_recv(True)
-                break
-            except (OSError, ValueError, AttributeError):
+            except asyncio.TimeoutError:
+                if timeout >= self.timeout:
+                    self.print_method(
+                        f"Connection with {self.addr[0]}:"
+                        f"{self.addr[1]} timed out.")
+                    self.disconnect_recv(True)
+                    break
+                else:
+                    timeout += 1
+            except (OSError, AttributeError):
                 self.disconnect_recv(False)
                 break
 
-    def send(self, content, mtype="message", attrib=[]):
+    async def send(self, content, mtype="message", attrib=""):
         """
         Handles message sending with correct protocol
         """
@@ -176,7 +183,7 @@ class Client():
         data = json.dumps(tmp)
         if not len(data) > int(self.buffer*0.8):
             data = data.ljust(self.buffer)
-            self.client.sendall(bytes(data, "utf8"))
+            await self.loop.sock_sendall(self.client, bytes(data, "utf8"))
         else:
             self.print_method(
                 "Your message is too large! It can be at most "
@@ -187,19 +194,23 @@ class Client():
         """
         Handles exit signal
         """
-        self.disconnect_main()
-        sys.exit(status)
+        try:
+            self.client.close()
+        finally:
+            sys.exit(status)
 
     def reset(self):
         """
         Resets server connection variables
         """
-        self.completions = self.default_completions
-        self.fully_connected = False
-        self.addr = (None, " not connected to any")
+        self.completions = self.default_completions.copy()
+        self.sname = None
+        self.nick = ""
+        self.addr = ("You are not connected", " to any server")
         self.client = None
+        self.fully_connected = False
 
-    def disconnect_main(self):
+    async def disconnect_main(self):
         """
         Forces receive thread to exit
         """
@@ -207,10 +218,12 @@ class Client():
             try:
                 self.client.shutdown(socket.SHUT_RDWR)
                 self.client.close()
-                self.receive_thread.join()
+                while self.fully_connected:
+                    await asyncio.sleep(0)
             except (BrokenPipeError, AttributeError, OSError):
                 pass
-        self.reset()
+        else:
+            self.reset()
 
     def disconnect_recv(self, error):
         """
@@ -227,24 +240,19 @@ class Client():
                     "Disconnected from"
                     f" {self.addr[0]}"
                     f":{self.addr[1]}")
-        else:
-            self.print_method(
-                "Disconnected from"
-                f" {self.addr[0]}"
-                f":{self.addr[1]}")
-        self.reset()
+            self.reset()
 
-    def command_connect(self, msg, secure):
+    async def command_connect(self, msg, secure):
         """
         Connect functionality
         """
         try:
-            if len(msg) > 3:
-                self.print_method("Invalid arguments")
+            if len(msg) != 3:
+                raise IndexError
             if self.client:
-                self.disconnect_main()
+                await self.disconnect_main()
             while self.fully_connected:
-                time.sleep(0.1)
+                await asyncio.sleep(0)
             host = msg[1]
             port = int(msg[2])
             self.client = socket.socket(
@@ -255,49 +263,37 @@ class Client():
                     ssl.PROTOCOL_TLS_CLIENT)
                 ssl_context.load_verify_locations(secure)
                 self.client = ssl_context.wrap_socket(self.client)
-            self.client.settimeout(10)
-            self.client.connect((host, port))
-            self.client.settimeout(None)
+            self.client.setblocking(False)
+            await asyncio.wait_for(
+                self.loop.sock_connect(self.client, (host, port)), 15)
             self.print_method("Connected to"
                               f" {host}"
                               f":{port}")
             try:
-                rdy, _, _ = select.select([self.client], [], [], 15)
-                if rdy:
-                    self.buffer = int(
-                        self.client.recv(1024).decode("utf8"))
-                    self.send(
-                        f"ACK{self.buffer}", "control", ['buffer'])
-                    rdy2, _, _ = select.select([self.client], [], [], 15)
-                    if rdy:
-                        response = json.loads(self.client.recv(
-                            self.buffer).decode("utf8"))
-                        if response['type'] == "control" and\
-                                "timeout" in response['attrib']:
-                            self.timeout = float(response['content'])
-                        else:
-                            raise ConnectionRefusedError
+                response = await asyncio.wait_for(
+                    self.loop.sock_recv(self.client, 512), 15)
+                self.buffer = int(response.decode("utf8"))
+                await self.send(f"ACK{self.buffer}", "control", 'buffer')
+                response = await asyncio.wait_for(
+                    self.loop.sock_recv(self.client, self.buffer), 15)
+                response = json.loads(response.decode("utf8"))
+                if response['type'] == "control" and\
+                        "timeout" in response['attrib']:
+                    self.timeout = float(response['content'])
                 else:
-                    raise ConnectionRefusedError
+                    raise Exception
             except Exception:
                 self.print_method(
                     "Failed to properly communicate with server or "
                     "hit 30s waiting limit! Disconnecting...")
-                self.disconnect_main()
-                self.disconnect_recv(False)
-                return True
+                return
             self.addr = (host, port)
-            self.receive_thread = threading.Thread(
-                name="Receive",
-                target=self.receive
-            )
-            self.receive_thread.daemon = 1
-            self.receive_thread.start()
+            self.loop.create_task(self.receive())
             while not self.fully_connected:
-                time.sleep(0.1)
+                await asyncio.sleep(0)
         except IndexError:
             self.print_method("Invalid arguments")
-        except ConnectionRefusedError:
+        except asyncio.TimeoutError:
             self.print_method("Host refused connection")
         except socket.gaierror:
             self.print_method("Unknown host")
@@ -316,18 +312,16 @@ class Client():
         except (TypeError, ValueError, OverflowError):
             self.print_method("Port must be in 0-65535 range")
 
-    def command_disconnect(self):
+    async def command_disconnect(self):
         """
         Disconnect functionality
         """
         if self.client:
-            self.disconnect_main()
-            while self.fully_connected:
-                time.sleep(0.1)
+            await self.disconnect_main()
         else:
             self.print_method("Not connected to any host")
 
-    def command_help(self):
+    async def command_help(self):
         """
         Help functionality
         """
@@ -336,54 +330,77 @@ class Client():
         for k, v in self.help.items():
             self.print_method(f"{k} - {v}")
         try:
-            self.send("h", "command")
+            await self.send("h", "command")
         except (NameError, OSError, AttributeError):
             pass
 
-    def start(self, secure=False, command=""):
+    async def handle_commands(self, secure=False, command=[], file=""):
         """
         Main thread functionality
         """
         if not sys.stdin.isatty():
             sys.exit(66)
+        filecontent = [""]
+        if file:
+            try:
+                with open(file, "r") as f:
+                    for i in f.readlines():
+                        filecontent[0] += i
+                filecontent = filecontent[0].split("\n")
+                while "" in filecontent:
+                    filecontent.remove("")
+            except OSError:
+                self.print_method("Couldn't read commands file!")
+        commands = []
+        for i in command:
+            if i.startswith(" "):
+                commands.append(i.lstrip())
+        commands += filecontent
+        for i in command:
+            if not i.startswith(" "):
+                commands.append(i)
         self.print_method(self.welcome)
         while True:
             try:
                 self.completer = NestedCompleter.from_nested_dict(
                     self.completions)
-                if command:
-                    msg = command[0]
-                    command.pop(0)
+                if commands:
+                    msg = commands[0]
+                    commands.pop(0)
                 else:
-                    msg = asyncio.run(self.input_method())
+                    msg = await self.input_method()
                 if msg.startswith(f"{self.csep}"):
                     msg = shlex.split(msg)
                     if msg[0] == f"{self.csep}c":
-                        if self.command_connect(msg, secure):
-                            continue
+                        await self.command_connect(msg, secure)
                     elif msg[0] == f"{self.csep}dc":
-                        self.command_disconnect()
+                        await self.command_disconnect()
                     elif msg[0] == f"{self.csep}h":
-                        self.command_help()
+                        await self.command_help()
                     elif msg[0] == f"{self.csep}q":
                         self.exit(0)
                     else:
                         try:
                             msg = shlex.join(msg)
-                            self.send(msg[1:], "command")
+                            await self.send(msg[1:], "command")
                         except (NameError, OSError, AttributeError):
                             self.print_method(f"Unknown command: '{msg}'")
                 else:
                     if not msg.strip():
                         continue
                     try:
-                        self.send(msg)
+                        await self.send(msg)
                     except (NameError, OSError, AttributeError):
                         self.print_method("Not connected to any host")
             except EOFError:
                 self.exit(0)
             except (KeyboardInterrupt, ValueError):
                 continue
+
+    def start(self, secure=False, command=[], file=""):
+        self.loop = asyncio.get_event_loop()
+        self.loop.run_until_complete(
+            self.handle_commands(secure, command, file))
 
 
 def parse_args():
@@ -400,10 +417,16 @@ def parse_args():
         "-s", "--secure",
         help="Enables SSL/TLS. Argument is certfile for auth.")
     arg.add_argument(
-        "-c", "--command", nargs="*",
+        "-c", "--command", nargs="*", default=[],
         help="Allows start with given commands (same as in interactive)")
+    arg.add_argument(
+        "file", nargs="?",
+        help="Path to file with commands, executed AFTER -, "
+             "before if first character of - is space. When using with -c"
+             " seperate arguments with '--' or give path first"
+    )
     args = arg.parse_args()
-    Client().start(args.secure, args.command)
+    Client().start(args.secure, args.command, args.file)
 
 
 if __name__ == "__main__":
