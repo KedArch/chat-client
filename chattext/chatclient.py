@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import json
@@ -53,14 +53,6 @@ class Client():
         self.default_completions = self.completions.copy()
         self.completer = NestedCompleter.from_nested_dict(self.completions)
         signal.signal(signal.SIGTERM, self.exit)
-        self.completion_replacements = {
-            "nick": "nick",
-            "user": "user",
-            "pass": "pass",
-            "newpass": "newpass",
-            "message": "message",
-            "sname": "sname"
-        }
 
     def bottom_text(self):
         """
@@ -92,9 +84,12 @@ class Client():
         if not command.startswith(self.csep):
             return
         command = command.split("-", 1)[0].split()
-        for k, v in self.completion_replacements.items():
-            for i in range(len(command)):
-                command[i] = command[i].replace(f"${k}", v)
+        for i, c in enumerate(command):
+            if command[0] == c:
+                continue
+            if c.startswith("$"):
+                c = c[1:]
+                command[i] = c
         try:
             self.completions = await self.dict_to_dict(
                 self.completions, command)
