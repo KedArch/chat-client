@@ -13,6 +13,7 @@ try:
     from prompt_toolkit.patch_stdout import patch_stdout
     from prompt_toolkit.completion import NestedCompleter
     from prompt_toolkit.styles import Style
+    from prompt_toolkit.shortcuts.prompt import CompleteStyle
 except ImportError:
     print("This client requires prompt_toolkit library to work.\n"
           "Download it with below command\n"
@@ -112,6 +113,7 @@ class Client():
                 completer=self.completer,
                 bottom_toolbar=self.bottom_text,
                 rprompt=self.rprompt,
+                complete_style=CompleteStyle.MULTI_COLUMN,
                 style=self.style)
         return msg
 
