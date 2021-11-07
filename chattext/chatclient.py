@@ -395,7 +395,7 @@ class Client():
                 continue
 
     def start(self, secure=False, command=[], file=""):
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.new_event_loop()
         self.loop.run_until_complete(
             self.handle_commands(secure, command, file))
 
