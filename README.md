@@ -13,10 +13,6 @@ Chat implementation I tried to do some time ago. Might return to finish it somet
 - scripting possibility
 - protocol based on JSON
 
-## Technical limitations
-
-- colors and unicode characters were checked only on Linux with readline
-
 ## Todo
 
 - comments
