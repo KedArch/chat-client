@@ -1,8 +1,8 @@
-# Chat implementation
+# Chat client implementation
 
 ## Description
 
-Chat implementation I tried to do some time ago. Might return to finish it sometime.
+Chat chat client implementation I tried to do some time ago. Might return to finish it sometime.
 
 ## Features
 
@@ -12,6 +12,7 @@ Chat implementation I tried to do some time ago. Might return to finish it somet
 - control commands
 - scripting possibility
 - protocol based on JSON
+- SSL/TLS support
 
 ## Todo
 
