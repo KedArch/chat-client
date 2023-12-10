@@ -6,8 +6,8 @@ import shlex
 import signal
 import argparse
 import asyncio
-from asyncio.selector_events import ssl
-from asyncio.selector_events import socket
+import ssl
+import socket
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -28,23 +28,22 @@ class Client():
     def __init__(self):
         self.basedir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.ps = PromptSession()
-        self.csep = "/"
         self.sname = None
         self.nick = ""
         self.client = None
         self.addr = ("You are not connected ", " to any server")
-        self.welcome = f"Welcome! Type {self.csep}h for help."
+        self.welcome = "Welcome! Type /h for help."
         self.help = {
-            f"{self.csep}c $addr $port": "connects to server",
-            f"{self.csep}dc": "disconnects from the server",
-            f"{self.csep}h": "help",
-            f"{self.csep}q": "quits program",
+            "/c $addr $port": "connects to server",
+            "/dc": "disconnects from the server",
+            "/h": "help",
+            "/q": "quits program",
         }
         self.completions = {
-            f"{self.csep}c": {"localhost": {"1111": None}},
-            f"{self.csep}dc": None,
-            f"{self.csep}h": None,
-            f"{self.csep}q": None,
+            "/c": {"localhost": {"1111": None}},
+            "/dc": None,
+            "/h": None,
+            "/q": None,
         }
         self.style = Style.from_dict({
                 'bottom-toolbar': 'noreverse #ffffff bg:#000000',
@@ -81,7 +80,7 @@ class Client():
         """
         Manipulates completion
         """
-        if not command.startswith(self.csep):
+        if not command.startswith("/"):
             return
         command = command.split("-", 1)[0].split()
         for i, c in enumerate(command):
@@ -135,18 +134,14 @@ class Client():
                     raise AttributeError
                 data = json.loads(data.decode("utf8"))
                 if data['type'] == "message":
-                    if data["attrib"] == "csep":
-                        data['content'] = data['content'].replace(
-                            "{csep}", self.csep)
                     if data['attrib'] == "welcome":
                         self.fully_connected = True
                     self.print_method(data['content'])
                 elif data['type'] == "control":
                     if data['attrib'] == "alive":
                         await self.send("", "control", 'alive')
-                    elif data['attrib'] == "csep":
-                        command = data['content'].replace(
-                            "{csep}", self.csep)
+                    elif data['attrib'] == "command":
+                        command = data['content']
                         await self.update_completion(command)
                     elif data['attrib'] == "sname":
                         self.sname = data['content']
@@ -158,8 +153,7 @@ class Client():
             except asyncio.TimeoutError:
                 if timeout >= self.timeout:
                     self.print_method(
-                        f"Connection with {self.addr[0]}:"
-                        f"{self.addr[1]} timed out.")
+                        f"Connection with {self.addr[0]}:{self.addr[1]} timed out.")
                     self.disconnect_recv(True)
                     break
                 else:
@@ -184,8 +178,7 @@ class Client():
         else:
             self.print_method(
                 "Your message is too large! It can be at most "
-                f"{self.buffer*0.8} (80% server's buffer "
-                f"{self.buffer} is safe limit).")
+                f"{self.buffer*0.8} (80% server's buffer {self.buffer} is safe limit).")
 
     def exit(self, status, frame=None):
         """
@@ -230,13 +223,11 @@ class Client():
             if error and self.addr[0]:
                 self.print_method(
                     "Connection lost with"
-                    f" {self.addr[0]}"
-                    f":{self.addr[1]}")
+                    f" {self.addr[0]}:{self.addr[1]}")
             else:
                 self.print_method(
                     "Disconnected from"
-                    f" {self.addr[0]}"
-                    f":{self.addr[1]}")
+                    f" {self.addr[0]}:{self.addr[1]}")
             self.reset()
 
     async def command_connect(self, msg, secure):
@@ -264,8 +255,7 @@ class Client():
             await asyncio.wait_for(
                 self.loop.sock_connect(self.client, (host, port)), 15)
             self.print_method("Connected to"
-                              f" {host}"
-                              f":{port}")
+                              f" {host}:{port}")
             try:
                 response = await asyncio.wait_for(
                     self.loop.sock_recv(self.client, 512), 15)
@@ -322,7 +312,7 @@ class Client():
         """
         Help functionality
         """
-        self.print_method(f"Command separator: '{self.csep}'")
+        self.print_method("Command separator: '/'")
         self.print_method("Client commands:")
         for k, v in self.help.items():
             self.print_method(f"{k} - {v}")
@@ -366,15 +356,15 @@ class Client():
                     commands.pop(0)
                 else:
                     msg = await self.input_method()
-                if msg.startswith(f"{self.csep}"):
+                if msg.startswith("/"):
                     msg = shlex.split(msg)
-                    if msg[0] == f"{self.csep}c":
+                    if msg[0] == "/c":
                         await self.command_connect(msg, secure)
-                    elif msg[0] == f"{self.csep}dc":
+                    elif msg[0] == "/dc":
                         await self.command_disconnect()
-                    elif msg[0] == f"{self.csep}h":
+                    elif msg[0] == "/h":
                         await self.command_help()
-                    elif msg[0] == f"{self.csep}q":
+                    elif msg[0] == "/q":
                         self.exit(0)
                     else:
                         try:
